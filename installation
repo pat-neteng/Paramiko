@@ -1,0 +1,89 @@
+Installation of Paramiko
+Installing Paramiko is pretty straightforward with Python pip. 
+However, there is a hard dependency on the cryptography library. 
+The library provides low-level, C-based encryption algorithms for the SSH protocol.
+
+The installation instruction for Windows, macOS, and other flavors of Linux can be found at: https://cryptography.io/en/latest/installation/.
+
+Paramiko installation steps for our Ubuntu 22.04
+
+  sudo apt-get install build-essential libssl-dev libffi-dev python3-dev 
+  pip install cryptography
+  pip install paramiko
+
+Let’s look at a quick Paramiko example using the Python 3 interactive shell:
+>>> import paramiko, time
+>>> connection = paramiko.SSHClient()
+>>> connection.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+>>> connection.connect('192.168.2.51', username='cisco', password='cisco', look_for_keys=False, allow_agent=False)
+>>> new_connection = connection.invoke_shell()
+>>> output = new_connection.recv(5000)
+>>> print(output) b"\r\n*************************************************************************\
+r\n* IOSv is strictly limited to use for evaluation, demonstration and IOS  *\r\n* education. IOSv is provided as-is and is not supported by Cisco's
+*\r\n* Technical Advisory Center. Any use or disclosure, in whole or in part, *\r\n* of the IOSv Software or Documentation to any third party for any
+*\r\n* purposes is expressly prohibited except as otherwise authorized by     *\r\n* Cisco in writing. 
+*\r\n***********************************************************************\r\nlax-edg-r1#"
+>>> new_connection.send("show version | i V\n")
+19
+>>> time.sleep(3)
+>>> output = new_connection.recv(5000)
+>>> print(output)
+b'show version | i V\r\nCisco IOS Software, IOSv Software (VIOS-ADVENTERPRISEK9-M), Version 15.8(3)M2,
+RELEASE SOFTWARE (fc2)\r\nProcessor board ID 98U40DKV403INHIULHYHB\r\nlax-edg-r1#'
+>>> new_connection.close()
+>>>
+
+The time.sleep() function inserts a time delay to ensure all the outputs were captured. 
+This is particularly useful on a slower network connection or a busy device. 
+This command is not required but is recommended depending on your situation.
+
+Even if we are seeing the Paramiko operation for the first time, 
+the beauty of Python and its clear syntax means that we can make a pretty good educated guess at what the program is trying to do:
+
+>>> import paramiko
+>>> connection = paramiko.SSHClient()
+>>> connection.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+>>> connection.connect('192.168.2.51', username='cisco', password='cisco',
+look_for_keys=False, allow_agent=False)
+
+The first four lines create an instance of the SSHClient class from Paramiko.
+The next line sets the policy that the client should use regarding keys; in this case, 
+lax-edg-r1 might not be in either the system host keys or the application’s keys. 
+In our scenario, we will automatically add the key to the application’s HostKeys object. 
+At this point, if you log on to the router, you will see all the login sessions from Paramiko.
+
+The next few lines invoke a new interactive shell from the connection and a 
+repeatable pattern of sending a command and retrieving the output. Finally, we close the connection.
+
+Some readers who have used Paramiko before might be familiar with the exec_command() method instead of invoking a shell. 
+Why do we need to invoke an interactive shell instead of using exec_command() directly? Unfortunately, exec_command() on Cisco IOS only allows a single command. 
+Consider the following example with exec_command() for the connection:
+
+>>> connection.connect('192.168.2.51', username='cisco', password='cisco', look_for_keys=False, allow_agent=False)
+>>> stdin, stdout, stderr = connection.exec_command('show version | i V\n')
+>>> stdout.read()
+b'Cisco IOS Software, IOSv Software (VIOS-ADVENTERPRISEK9-M), Version 15.8(3)M2, RELEASE SOFTWARE (fc2)rnProcessor board ID 98U40DKV403INHIULHYHBrn'
+>>>
+
+>>> stdin, stdout, stderr = connection.exec_command('show version | i V\n') 
+Traceback (most recent call last):
+<skip>
+raise SSHException('SSH session not active') paramiko.ssh_exception.SSHException: SSH session not active
+>>>
+
+In the previous example, the new_connection.recv() command displayed what was in the buffer and implicitly cleared it out for us. 
+What would happen if you did not clear out the received buffer? The output would just keep on filling up the buffer and would overwrite it:
+
+>>> new_connection.send("show version | i V\n")
+ 19
+>>> new_connection.send("show version | i V\n") 
+19
+>>> new_connection.send("show version | i V\n") 
+19
+>>> new_connection.recv(5000)
+b'show version | i VrnCisco IOS Software, IOSv Software (VIOS- ADVENTERPRISEK9-M), Version 15.8(3)M2, RELEASE SOFTWARE (fc2)rnProcessor
+board ID 98U40DKV403INHIULHYHBrnlax-edg-r1#show version | i VrnCisco IOS Software,
+IOSv Software (VIOS-ADVENTERPRISEK9-M), Version 15.8(3)M2, RELEASE SOFTWARE (fc2)rnProcessor 
+board ID 98U40DKV403INHIULHYHBrnlax-edg-r1#show version | i VrnCisco IOS Software, IOSv Software 
+(VIOS-ADVENTERPRISEK9-M), Version 15.8(3)M2, RELEASE SOFTWARE (fc2)rnProcessor board ID 98U40DKV403INHIULHYHBrnlax-edg-r1#'
+>>>
